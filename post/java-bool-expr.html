@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>
+Generating Truth Tables in Java : Part 1 : Expressions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./../style.css">
+</head>
+<body>
+<header>
+<p><a href="./../index.html">↩ main page</a></p>
+<hr>
+</header>
+<h1 id="generating-truth-tables-in-java-part-1-expressions">Generating
+Truth Tables in Java : Part 1 : Expressions</h1>
+<p>This is part one in a N part series. (I am not sure yet just how many
+posts it will take). Fair warning: I have only just started the Java, so
+some of this will likely not be idiomatic Java. But I do want to write
+down what I have learned so far to help solidify my understanding, and
+to get more practice writing in general. Even so, I did choose to write
+this post in a tutorial form. I honestly think I did this only because,
+having been immersed in so many tutorials the past few weeks, it is now
+my default mode of thought. But if this tutorial does actually end up
+helping anyone, that would be very nice!</p>
+<p>The full code developed in this post can be found <a
+href="https://github.com/cas-e/blog-code/blob/main/JavaBoolEval/BoolEval.java">here</a>
+on github.</p>
+<h2 id="goal">Goal</h2>
+<p>Our goal here is to write a program that, when given a string
+representing a boolean formula like</p>
+<pre><code>x &amp;&amp; y</code></pre>
+<p>the program will produce</p>
+<pre><code>x     y     | formula
+---------------------
+false false | false
+false true  | false
+true  false | false
+true  true  | true
+---------------------</code></pre>
+<p>It should also work on longer boolean formulas, such as:</p>
+<pre><code>p || q &amp;&amp; !r &amp;&amp; q</code></pre>
+<p>Which will produce</p>
+<pre><code>p     q     r     | formula
+---------------------------
+false false false | false
+false false true  | false
+false true  false | true
+false true  true  | false
+true  false false | true
+true  false true  | true
+true  true  false | true
+true  true  true  | true
+---------------------------</code></pre>
+<p>We can divide this problem into four parts:</p>
+<ul>
+<li>making sense of the input text</li>
+<li>finding through every possible value for the variables in the
+input</li>
+<li>determining a value for each of those variables</li>
+<li>printing the results in the form a table</li>
+</ul>
+<p>Those are a lot of things to think about all at once. Maybe too
+many.</p>
+<p>So, we will start with an easier sub-problem. Our goal will be, when
+given a boolean expression without any variables like</p>
+<pre><code>true &amp;&amp; true</code></pre>
+<p>the program will produce</p>
+<pre><code>true</code></pre>
+<p>The parts of our problem are now:</p>
+<ul>
+<li>making sense of the input text</li>
+<li>determining a single value for the expression</li>
+</ul>
+<p>That seems manageable.</p>
+<h2 id="making-sense-of-the-input-text">Making Sense of the Input
+Text</h2>
+<p>Before we actually get into any coding, lets try to understand some
+aspects of the problem.</p>
+<p>Here is an example of a boolean expression in Java’s syntax:</p>
+<pre><code>false || true  &amp;&amp; (!false &amp;&amp; true)</code></pre>
+<p>A common way to visualize an expression like this is as a tree:</p>
+<pre><code>or
+├── false
+└── and
+    ├── true
+    └── and
+        ├── not
+        │   └── false
+        └── true</code></pre>
+<p>If it’s not obvious how the tree corresponds to the text, then it is
+worth taking a moment to look over it. (And remember the precedence
+rules for the java version: <code>not</code> is evaluated before
+<code>and</code>, <code>and</code> is evaluated before
+<code>or</code>).</p>
+<p>One reason it is nice to visualize the expression in the tree form,
+is because it tells you how to interpret the statement <strong>without
+knowing any of the precedence rules</strong>. If you look at the top of
+the tree, and visually follow the lines, every operator points to its
+operands, and when you get to the bottom, you can start evaluating the
+simpler statements and build up the answer.</p>
+<p>Let’s look at one more way to write a boolean expression: prefix
+syntax. In prefix syntax, the operators like <code>and</code> and
+<code>not</code> come <strong>before</strong> the operands like
+<code>true</code> or <code>false</code>. In prefix syntax we can write
+the above tree as:</p>
+<pre><code>or false and true and not false true</code></pre>
+<p>Which, to me, is hard to make sense of. But if we add some
+parentheses:</p>
+<pre><code>(or false (and true (and (not false) true)))</code></pre>
+<p>Then it is a little easier to read, though it still takes some
+getting use to.</p>
+<p>What is nice about the prefix syntax is the same thing that is nice
+about the tree representation– we do not need to know any precedence
+rules to understand it. So, following the above ideas, we can choose to
+write a program that:</p>
+<ul>
+<li>Scans through the text</li>
+<li>Understands precedence rules</li>
+<li>Evaluates the corresponding expression</li>
+</ul>
+<p>Or alternatively, we can write a program that only needs to do two of
+those:</p>
+<ul>
+<li>Scans through the text</li>
+<li>Evaluates the corresponding expression</li>
+</ul>
+<p>Again we have the opportunity to solve a simpler sub-problem. So for
+now we will only focus on evaluating expressions in a prefix
+notation.</p>
+<h2 id="scanning-text">Scanning Text</h2>
+<p>Okay, some coding now. The first part of our program will take a
+string like this:</p>
+<pre><code>&quot;(or false (and true (and (not false) true)))&quot;</code></pre>
+<p>And returns all the important words, or <strong>tokens</strong>, as
+an array…</p>
+<pre><code>[&quot;or&quot;, &quot;false&quot;, &quot;and&quot;, &quot;true&quot;, &quot;not&quot;, &quot;false&quot;, &quot;true&quot;]</code></pre>
+<p>Notice that all occurrences of spaces has been removed, but also of
+parentheses. Since we know the arity of every operator (e.g. the arity
+of <code>and</code> is two because it needs two arguments),the
+parentheses are unnecessary. However, we will allow them in the text to
+keep the inputs readable.</p>
+<p>Java has built-in functions <a
+href="https://docs.oracle.com/javase/8/docs/api/java/lang/String.html#replace-java.lang.CharSequence-java.lang.CharSequence-">replace</a>
+and <a
+href="https://docs.oracle.com/javase/8/docs/api/java/lang/String.html#split-java.lang.String-">split</a>
+that can help us here:</p>
+<pre><code>public class BoolEval {
+    public static void main(String[] args) {
+        String testInput = &quot;(or false true)&quot;;
+        String[] tokens = tokenize(testInput);
+        System.out.print(&quot;[&quot;);
+        for (String t : tokens) { 
+            System.out.print(t + &quot; , &quot;);
+        }   
+        System.out.print(&quot;]&quot;);
+    }
+    public static String[] tokenize(String input) {
+        return input.replace(&quot;(&quot;, &quot;  &quot;).replace(&quot;)&quot;, &quot;  &quot;).split(&quot;\\s+&quot;);
+    }
+}
+// ==&gt; [ &quot;&quot;, or , false , true ,]</code></pre>
+<p>We are almost there. tokenize separates all of the tokens, but it
+also returns some empty strings in the array. On that note, the
+tokenizer presented here is almost exactly the one presented in Peter
+Norvig’s essay <a href="https://norvig.com/lispy.html">(How to Write a
+(Lisp) Interpreter (in Python))</a>. (Which (by the way) is an excellent
+read). But our tokenizer will have to be somewhat different, due to the
+differences in Python versus Java. In Python, <code>split</code> with no
+arguments returns the string split by spaces, with the resulting list
+having no occurrences of the empty string. Java’s <code>split</code>
+doesn’t have this functionality. (Neither does Go’s
+<code>strings.Split</code> by the way). But Java <strong>does</strong>
+provide us with <code>lambdas</code> which will get the job done. Here
+is the updated method with a <code>lambda</code> that filters out all of
+the empty spaces:</p>
+<pre><code>import java.util.Arrays;
+
+public class BoolEval {
+    public static void main(String[] args) {
+        String testInput = &quot;(or false (and true (and (not false) true)))&quot;;
+        String[] tokens = tokenize(testInput);
+        System.out.print(&quot;[&quot;);
+        for (String t : tokens) { 
+            System.out.print(t + &quot; , &quot;);
+        }
+        System.out.print(&quot;]&quot;);
+    }
+    public static String[] tokenize(String input) {
+        String[] s = input.replace(&quot;(&quot;, &quot;  &quot;).replace(&quot;)&quot;, &quot;  &quot;).split(&quot;\\s+&quot;);
+        return Arrays.stream(s).filter(x -&gt; x.length() &gt; 0).toArray(String[]::new);
+    }
+}</code></pre>
+<p>Now that we can generate tokens from strings, we just have to
+traverse and evaluate them.</p>
+<h2 id="traversing-tokens">Traversing Tokens</h2>
+<p>Here we will make a wrapper class around our string array called
+<code>Seq</code>. <code>Seq</code> is pronounced “seek” and will
+represent a sequence we can seek through to get things.</p>
+<pre><code>import java.util.Arrays;
+
+public class BoolEval {
+    // main() ...
+    // tokenize() ...
+}
+
+class Seq {
+    int index;
+    String[] array;
+    public Seq(String[] sa) { 
+        this.array = sa;
+    }
+    public String take() { 
+        return this.array[this.index++]; 
+    }
+}</code></pre>
+<p>We can think of <code>Seq</code> as a little machine with a button
+called <code>take()</code>. Every time we press the <code>take()</code>
+button, the next thing in the sequence pops out of the machine.</p>
+<h2 id="evaluating-expressions">Evaluating expressions</h2>
+<p>Let’s add another method to our BoolEval class called
+<code>evaluate</code>:</p>
+<pre><code>public class BoolEval {
+    // ...
+    public static boolean evaluate(String[] formula) {
+        Seq ops = new Seq(formula);
+        // do something...  
+        return false;
+    }
+}</code></pre>
+<p>Right now, <code>evaluate</code>’s only job is to initialize the
+array into a <code>Seq</code> class, so that outside callers of the
+method don’t have to. We make a method <code>eval</code> that will do
+the actual work:</p>
+<pre><code>public static boolean evaluate(String[] formula) {
+    Seq ops = new Seq(formula);
+    boolean value = eval(ops);  
+    return value;
+}
+public static boolean eval(Seq ops) {
+    // do something...
+    return false;
+}</code></pre>
+<p>So, what should <code>eval</code> do? Lets think of some example
+expressions…</p>
+<pre><code>(and true false)       ==&gt; false
+(or false (not false)) ==&gt; true
+true                   ==&gt; true</code></pre>
+<p>We can divide these up into two types: <strong>immediate
+expressions</strong> like <code>true</code> we know the answer to right
+away. We will call everything else a <strong>compound
+expression</strong>. So we have two little parts to this</p>
+<ul>
+<li>evaluate immediate expressions</li>
+<li>evaluate compound expressions</li>
+</ul>
+<p>So let’s do the simple thing and work with immediates.</p>
+<pre><code>public static boolean eval(Seq ops) {
+    String op = ops.take();
+    if (op.equals(&quot;true&quot;))    return true;
+    if (op.equals(&quot;false&quot;))   return false;
+
+    System.out.println(&quot;unrecognized token: &quot; + op);
+    System.exit(1);
+    return false;
+}</code></pre>
+<p>We can now test the only two immediate expressions of the language:
+<code>true</code> and <code>false</code>. To use our evaluate method, we
+can flow the input string through the tokenizer, then flow the tokens
+into the evaluator:</p>
+<pre><code>public class BoolEval {
+    public static void main(String[] args) {
+        String testInput = &quot;true&quot;;
+        String[]  tokens = tokenize(testInput);
+        boolean    value = evaluate(tokens);
+        System.out.println(value);
+    }
+    // tokenize() ...
+
+    public static boolean evaluate(String[] formula) {
+        Seq ops = new Seq(formula);
+        boolean value = eval(ops);  
+        return value;
+    }
+    public static boolean eval(Seq ops) {
+        String op = ops.take();
+        if (op.equals(&quot;true&quot;))    return true;
+        if (op.equals(&quot;false&quot;))   return false;
+
+        System.out.println(&quot;unrecognized token: &quot; + op);
+        System.exit(1);
+        return false;
+    }
+}
+// Seq() ...</code></pre>
+<p>Since the test input is set to <code>true</code>, running this gets
+us…</p>
+<pre><code>true</code></pre>
+<p>It works! But it almost seems silly to write such a simple program.
+All that effort just to turn a <code>String true</code> into a
+<code>boolean true</code>? But writing in small pieces like this affords
+us the ability to compile, run, and test our programs frequently. Which,
+for me at least, is crucial. I am frequently making little type and
+syntax errors as I write, an it is nice to have these caught early by
+the Java compiler.</p>
+<p>Moving on now. We have immediates handled, but what about compound
+expressions? Lets take another look at at the example tree
+representation of expressions from earlier:</p>
+<pre><code>or
+├── false
+└── and
+    ├── true
+    └── and
+        ├── not
+        │   └── false
+        └── true</code></pre>
+<p>To evaluate this, we can look at the top element, then look at it’s
+first branch. So, Look at <code>or</code>, then look at
+<code>false</code>. We know the value of <code>false</code>, it’s false.
+Easy. We are going to compute <code>or(false, *something*)</code>. The
+next branch of <code>or</code> is <code>and</code>. We don’t know the
+value of that yet. So we do the same thing. Look at <code>and</code>,
+then look at <code>true</code>. We know the value of <code>true</code>,
+it’s true. Easy. We are going to compute
+<code>or(false, and(true, *something*))</code>. The next branch of
+<code>and</code> is…</p>
+<p>And so on. See the repetitive pattern? This pattern allows us to
+describe <code>eval</code> <a
+href="https://www.freecodecamp.org/news/how-recursion-works-explained-with-flowcharts-and-a-video-de61f40cb7f9/#:~:text=A%20recursive%20function%20always%20has,the%20function%20stops%20calling%20itself.">recursively</a>
+as follows:</p>
+<pre><code>public static boolean evaluate(String[] formula) {
+    Seq ops = new Seq(formula);
+    boolean value = eval(ops);  
+    return value;
+}
+public static boolean eval(Seq ops) {
+    String op = ops.take();
+    if (op.equals(&quot;true&quot;))    return true;
+    if (op.equals(&quot;false&quot;))   return false;
+    if (op.equals(&quot;not&quot;))     return !eval(ops);
+    if (op.equals(&quot;or&quot;))      return eval(ops) || eval(ops);
+    if (op.equals(&quot;and&quot;))     return eval(ops) &amp;&amp; eval(ops);
+
+    System.out.println(&quot;unrecognized token: &quot; + op);
+    System.exit(1);
+    return false;
+}</code></pre>
+<p>This recursive method walks down the list of instructions until it
+finds an immediate value. Java saves that partial answer somewhere,
+until it gets two partial answers that it can call one of the operations
+on. (Or just one in the case of <code>not</code>). It keeps doing that
+until the whole thing is reduced and the goal of finding a single
+boolean value has been achieved.</p>
+<p>To use our new evaluate method, we flow the input string through the
+tokenizer again, then flow the tokens into evaluate, just like
+before:</p>
+<pre><code>import java.util.Arrays;
+
+public class BoolEval {
+    public static void main(String[] args) {
+        String testInput = &quot;(or false (and true (and (not false) true)))&quot;;
+        String[]  tokens = tokenize(testInput);
+        boolean    value = evaluate(tokens);
+        System.out.println(value);
+    }
+    // ...
+}
+// ...</code></pre>
+<p>Running this, we get:</p>
+<pre><code>true</code></pre>
+<p>It works! 🎉</p>
+<h2 id="what-we-did">What we did</h2>
+<p>After all that we finally have a working program that solves one
+small part of the problem! Our strategy was was to break down the
+problem into more manageable sub-problems which gave us a to-do list
+like this:</p>
+<pre><code>generate all truth tables given a formula
+├── make sense of the input text
+│   ├── tokenizing ✅
+│   └── precedence rules
+├── find every possible value for the variables 
+├── evaluate all possible expressions from the formula
+│   └── evaluate a single expression ✅
+│       ├── &quot;true&quot;, &quot;false&quot; equal themselves ✅
+│       └── recursively traverse &quot;and&quot;, &quot;or&quot;, &quot;not&quot; ✅
+└── print the results in the form a table</code></pre>
+<p>We looked through our to-do list of sub-problems until we got to
+something we could easily handle. Then we solved a single easy thing.
+Once we solved a couple of easy things, like tokenize and evaluate, we
+composed them together to solve a bigger part of the problem. Now we can
+work through the rest of the to-do list and hopefully apply the same
+strategy until we arrive at our goal.</p>
+<p>Somehow that pattern seems very familiar…</p>
+<h2 id="end-remarks">End Remarks</h2>
+<p>Our program works well on its intending inputs: well-formed
+expressions. For example: <code>(and true false)</code> is a well-formed
+expression that we can evaluate to <code>false</code>. But what about
+“nonsense” expressions like <code>(true and or)</code> or
+<code>(and not)</code>?</p>
+<p>With the way evaluate is currently defined, these return:</p>
+<pre><code>(true and or) == true 
+// eval finds true, returns it, then stops consuming input
+
+(and not) =&gt; Exception in thread &quot;main&quot; java.lang.ArrayIndexOutOfBoundsException:
+// eval keeps trying to consume input even after it runs out</code></pre>
+<p>This seems like the wrong thing to do. But that’s okay (for now). As
+we move through the rest of our to-do list, we will keep these
+limitations in mind. At some point in solving the other sub-problems, we
+can fix this issue too.</p>
+<p>If you read this far, then thanks for reading! See you next time when
+we extend this program further.</p>
