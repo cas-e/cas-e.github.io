@@ -9,11 +9,12 @@ body {
   font-size: 100%;
   line-height: 1.52;
   margin: 0 auto;
-  max-width: 700px;
+  max-width: 84ch;
   padding: 0 15px 150px;
   color: #0e1111;
   background: #fefefe;
 }
+
 a,a:visited {
   color:#166CBF;
   text-decoration: none;
@@ -41,6 +42,7 @@ code {
   border-radius: 3px;
 }
 pre code {
+  font-size: 90%;
   display: block;
   overflow-x: auto;
   padding: 5px;

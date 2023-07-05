@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generating Truth Tables in Java : Part 2 : Parsing</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./../style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👾</text></svg>">
+</head>
+<body>
+<header>
+<p><a href="./../index.html">↩ main page</a></p>
+<hr>
+</header>
+<h1 id="generating-truth-tables-in-java-part-2-parsing">Generating Truth
+Tables in Java : Part 2 : Parsing</h1>
+<p>Part one of this series can be found <a
+href="java-bool-expr.html">here</a>.</p>
+<p>The full code developed in this post can be found <a
+href="https://github.com/cas-e/blog-code/tree/main/JavaBoolParse">here</a>.</p>
+<h2 id="the-plan">The plan</h2>
+<p>We wrapped up last time with a working boolean expression evaluator
+and a to-do list for our problem that looked something like this:</p>
+<pre><code>generate all truth tables given a formula
+├── make sense of the input text
+│   ├── tokenizing ✅
+│   └── precedence rules
+├── find every possible value for the variables 
+├── evaluate all possible expressions from the formula
+│   └── evaluate a single expression ✅
+└── print the results in the form a table</code></pre>
+<p>Today we tackle precedence rules. I see two options here:</p>
+<ul>
+<li>Write a parser, which will convert the precedence syntax into a
+tree</li>
+<li>Just don’t have precedence rules – use pre(or post)-fix syntax
+instead</li>
+</ul>
+<p>Last time we chose to just work with prefix syntax. We could keep
+using that strategy and finish the rest of the project. No parser
+needed. Just delete it from the to-do list and write it to the
+unfulfilled-wish list. That would be fine, as long as we are comfortable
+writing our boolean expressions in prefix form. And there is good reason
+to get comfortable with it if we aren’t already– parsing is actually the
+trickiest part of this entire problem. It’s also the most inessential.
+Writing parsers is perhaps best avoided when possible.</p>
+<p>But let’s do it anyways just for fun.</p>
+<h2 id="a-little-recap">A little recap</h2>
+<p>Last time, we were able to take our tokens and feed them directly
+into the parser. The parser only needed to press the <code>take</code>
+button over and over to be able to get to traverse the expression tree,
+so it could eventually find values and start reducing the
+expression:</p>
+<pre><code>public static boolean eval(Seq ops) {
+    String op = ops.take();
+    if (op.equals(&quot;true&quot;))    return true;
+    if (op.equals(&quot;false&quot;))   return false;
+    if (op.equals(&quot;not&quot;))     return !eval(ops);
+    // etc...</code></pre>
+<p>That strategy won’t work anymore with precedence syntax. Take a
+look:</p>
+<pre><code>true &amp;&amp; false &amp;&amp; false || true</code></pre>
+<p>Here, the root of the expression tree is the <code>||</code> near the
+end of the expression. And in general with this kind of syntax, we don’t
+really know where to start until we have read the whole thing. We could
+make <code>eval</code> jump around all over the tokens trying to
+remember where it had been… but that would get complicated. Instead, we
+write a parser that just transforms precedence syntax into a tree.</p>
+<p>The method we will use to parse is often called Pratt Parsing, though
+it goes by other names as well. And our implementation of this method is
+essentially a version of the one in Alex Kladov’s <a
+href="https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html#Simple-but-Powerful-Pratt-Parsing">Simple
+but Powerful Pratt Parsing</a>. Of all articles I looked at for this
+topic, Alex’s was my favorite. It has a clear explanation of the
+problem, and a direct implementation strategy that easily translates to
+other languages besides Rust.</p>
+<p>Let’s get started.</p>
+<h2 id="organization">Organization</h2>
+<p>Here is how we will organize our project now:</p>
+<pre><code>Project/
+├── TruthTable.java  // contains main()
+└── Tree.java        // provides parse() and defines what a tree is</code></pre>
+<p>Let’s start with a look at TruthTable.java. Here is it is in its
+entirety:</p>
+<pre><code>public class TruthTable {
+    public static void main(String[] args) {
+        String   input = &quot;false || true  &amp;&amp; (!false &amp;&amp; true);
+        Tree.Node tree = Tree.parse(input);
+        boolean answer = eval(tree);
+
+        System.out.println(answer);
+    }
+    public static boolean eval(Tree.Node n) {
+        if (n.val.equals(&quot;true&quot;))  return true;
+        if (n.val.equals(&quot;false&quot;)) return false; 
+        if (n.val.equals(&quot;!&quot;))     return !eval(n.left);
+        if (n.val.equals(&quot;||&quot;))    return eval(n.left) || eval(n.right);
+        if (n.val.equals(&quot;&amp;&amp;&quot;))    return eval(n.left) &amp;&amp; eval(n.right);
+        System.out.println(&quot;unrecognized token in evaluator&quot;);
+        System.exit(1);
+        return false;
+    }
+}</code></pre>
+<p>All it has right now is the <code>eval</code> method. We will update
+it more in future posts. But for now, look how little about it has
+changed from last time– mostly just the fact that it now takes
+<code>Tree.Node</code> as input.</p>
+<p>All of our other work in this post will be building out the Tree
+class in Tree.java.</p>
+<h2 id="updating-the-tokenizer">Updating the Tokenizer</h2>
+<p>The tokenizer now needs to recognize and separate off the follow
+strings: <code>true</code>, <code>false</code>, <code>&amp;&amp;</code>,
+<code>||</code>, <code>!</code>, and also <code>(</code> and
+<code>)</code>…</p>
+<pre><code>public static String[] tokenize(String input) {
+    String s = input.replace(&quot;(&quot;, &quot; ( &quot;).replace(&quot;)&quot;, &quot; ) &quot;).replace(&quot;!&quot;, &quot; ! &quot;);
+    String[] sa = s.replace(&quot;&amp;&amp;&quot;, &quot; &amp;&amp; &quot;).replace(&quot;||&quot;, &quot; || &quot;).split(&quot;\\s+&quot;);
+    return Arrays.stream(sa).filter(x -&gt; x.length() &gt; 0).toArray(String[]::new);
+}</code></pre>
+<p>This is an inefficient way to produce tokens, since every call to
+replace is creating a new underlying char array. And the more tokens we
+add, the worse it gets. <strong>AND</strong> it can’t even handle
+newlines or other whitespace! All our inputs better be one-liners only.
+Which kind of solves the inefficiency problem since our input size is
+tightly bounded…</p>
+<p>Anyways, it’s fine for our purposes right now. And we could build it
+out later without changing our other code if we keep the type signature
+the same.</p>
+<h2 id="representing-trees">Representing Trees</h2>
+<p>Let’s take a look at <code>Tree.Node</code>:</p>
+<pre><code>public static class Node {
+    String val;
+    Node left;
+    Node right;
+    boolean isVar = false;
+    public Node(String s, Node l, Node r) {
+        val = s;
+        left = l;
+        right = r;
+    }
+}</code></pre>
+<p>Notice that the left and right fields contain pointers to other Node
+instances. This is what allows us to build trees. The convention will be
+that leaves like (<code>true</code> and <code>false</code>) will have
+<code>null</code> in their left and right branches. Unary functions, of
+which we have only one named <code>!</code>, will contain null in the
+right branch only.</p>
+<p>For example, the expression:</p>
+<pre><code>true &amp;&amp; !false</code></pre>
+<p>Would have its tree be represented by:</p>
+<pre><code>Node trueLeaf = new Node(&quot;true&quot;, null, null);
+Node falseLeaf = new Node(&quot;false&quot;, null, null);
+Node notSingle = new Node(&quot;!&quot;, falseLeaf, null);
+Node tree =  Node(&quot;&amp;&amp;&quot;, trueLeaf, notSingle);</code></pre>
+<h2 id="writing-the-parser-preliminaries">Writing the Parser:
+Preliminaries</h2>
+<p>Here is our <code>parse</code> method that we export to our main
+TruthTable class:</p>
+<pre><code>public static Node parse(String input) {
+    return parseExpr(tokenize(input));
+}</code></pre>
+<p>It calls <code>tokenize</code>, which we already defined, and
+<code>parseExpr</code> which looks like this:</p>
+<pre><code>public static Node parseExpr(String[] tokens) {
+    Seq toks = new Seq(tokens);
+    return parseInfix(toks, 0);
+}</code></pre>
+<p>We will need to add some more functionality to our Seq class:</p>
+<pre><code>private static class Seq {
+    int index;
+    String[] array;
+    public Seq(String[] s) { array = s;}
+    public boolean more() { return (array.length - index) &gt; 0; }
+    public String take() { return array[index++]; }
+    public String peek() { 
+        if (!more()) {
+            return &quot;&quot;;
+        }
+        return array[index];
+    }</code></pre>
+<p>The <code>take</code> method is there as before, but we have added a
+<code>more</code> predicate to determine the end of the input.
+<code>peek</code> is like <code>take</code>, but it doesn’t move the
+input forward, and it also signals the end of input as the empty
+string.</p>
+<p>Now, about that <code>0</code> that we passed into
+<code>parseInfix</code> earlier, that all has to do with how we
+represent precedence. We provide a lookup to see the precedence rules
+from a given operator here:</p>
+<pre><code>private static int[] bindingPower(String s) {
+    if (s.equals(&quot;||&quot;)) { return new int[]{1, 2};}
+    if (s.equals(&quot;&amp;&amp;&quot;)) { return new int[]{3, 4};} 
+    return new int[]{-1, 5}; // case for !
+}</code></pre>
+<p>The returned arrays are representing pairs of values: the left and
+right binding power of the operators. For the case of <code>!</code>,
+the left side <code>-1</code> signals that it has no left binding power
+at all. Here, ops with higher numbers are said to “bind tighter” and end
+up closer to the leaves of the tree. The left binding powers all have
+looser binding, which encodes the fact that ties break to the left.</p>
+<h2 id="writing-the-parser-small-version">Writing the Parser: Small
+Version</h2>
+<p>First we write a parser for just <code>true</code>,
+<code>false</code>, <code>&amp;&amp;</code>, and <code>||</code>. Later
+versions will add the rest and some error handling, but this is the
+basic idea:</p>
+<pre><code>private static Node parseInfix(Seq toks, int minbp) { 
+    Node lhs = parsePrefix(toks);
+
+    while (toks.more()) {
+        String op = toks.peek();
+
+        int lbp = bindingPower(op)[0];  
+
+        if (lbp &lt; minbp) { 
+            break;
+        }
+
+        toks.take();
+        Node rhs = parseInfix(toks, rbp);  // recursive call within loop (!)
+        lhs = new Node(op, lhs, rhs); 
+    }
+    return lhs;  // notice if the loop fails to fire,
+                 // left-hand side is the only side
+}                // this is also how we handle immediates
+
+private static Node parsePrefix(Seq toks) {
+    String tok = toks.take();
+    if (tok.equals(&quot;true&quot;) || tok.equals(&quot;false&quot;)) {
+        return new Node(tok, null, null);
+    }
+    return null; // unrecognized
+}</code></pre>
+<p>Don’t worry if you can’t understand it at first, it definitely took
+me a minute to get this. One thing I sometimes do if I am stuck on
+understanding something is to “become the Turing machine”. By which I
+mean, I try to write down on paper which values are changing, step by
+step, for some small example inputs. Eventually things will click. And
+again, I highly recommend the explanation <a
+href="https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html#Simple-but-Powerful-Pratt-Parsing">here</a>.
+The code here is pretty much a direct translation, minus some of the
+Rust-specific type stuff.</p>
+<h2 id="writing-the-parser-full-version">Writing the Parser: Full
+Version</h2>
+<p>Let’s handle some errors. Even though we are only parsing a single
+line, there are many ways for an expression to be malformed and not
+valid for evaluation. So we’ll add a helper:</p>
+<pre><code>private static void error(String s) {
+    System.out.println(s);
+    System.exit(1);
+}</code></pre>
+<p>And here is our updated <code>parseInfix</code></p>
+<pre><code>private static Node parseInfix(Seq toks, int minbp) {
+    Node lhs = parsePrefix(toks);
+    while (toks.more()) {
+        String op = toks.peek();
+        if (op.equals(&quot;)&quot;)) {
+            break;
+        } 
+        if (!(op.equals(&quot;&amp;&amp;&quot;) || op.equals(&quot;||&quot;))) {
+            error(&quot;bad operator&quot;);
+        }
+        int lbp = bindingPower(op)[0];
+        int rbp = bindingPower(op)[1];
+        if (lbp &lt; minbp) {
+            break;
+        }
+        toks.take();
+        Node rhs = parseInfix(toks, rbp);
+        lhs = new Node(op, lhs, rhs);
+    }
+    return lhs;
+}</code></pre>
+<p>It now has an error condition to make sure only our infix operators
+are used in <code>parseInfix</code>. This filters out programs like
+<code>false true false</code>, where applying <code>true</code> to these
+<code>false</code> values makes no sense. We also add some logic to
+break the loop for closing parens.</p>
+<p>Here is our updated parsePrefix:</p>
+<pre><code>private static Node parsePrefix(Seq toks) {
+    if (!toks.more()) {
+        error(&quot;unexpected end of line&quot;);
+    }
+    String tok = toks.take();
+    if (tok.equals(&quot;true&quot;) || tok.equals(&quot;false&quot;)) {
+        return new Node(tok, null, null);
+    }
+    if (tok.equals(&quot;!&quot;)) {
+        int rbp = bindingPower(tok)[1];
+        return new Node(&quot;!&quot;, parseInfix(toks, rbp), null);
+    }
+    if (tok.equals(&quot;(&quot;)) {
+        Node node = parseInfix(toks, 0);
+        if (!toks.peek().equals(&quot;)&quot;)) {
+            error(&quot;unbalanced paren&quot;);
+        }
+        toks.take();
+        return node;
+    }
+    if (tok.equals(&quot;&amp;&amp;&quot;) || tok.equals(&quot;||&quot;) || tok.equals(&quot;)&quot;)) {
+        error(&quot;bad operand&quot;);
+    }
+    Node node = new Node(tok, null, null);
+    node.isVar = true;
+    return node;
+}</code></pre>
+<p>We’ve added error checking here as well, tossing away many
+syntactically invalid expressions like <code>"|| ( &amp;"</code> or
+<code>"&amp; false true"</code>. Our definition also rejects the empty
+expression represented by either the empty string or just spaces. The
+last error we check is to make sure none of our binary operators are in
+the prefix position.</p>
+<p>All of that case handling and error checking produces a sieve that
+ensures that, at the end of this function, anything else is a variable.
+We aren’t doing anything with variables in this post but we just set
+this up now for next time.</p>
+<p>As far as added functionality in parsePrefix goes, notice how the
+case for <code>(</code> calls <code>parseInfix</code> with the lowest
+minimum binding power, since parens delineate a new sub expression.
+Meanwhile, the case for <code>!</code> calls with the highest possible
+binding power for this language.</p>
+<h2 id="wrap-up">Wrap up</h2>
+<p>We can now go back into our Truth Table class and use our
+<code>parse</code> method from the Tree class:</p>
+<pre><code>public class TruthTable {
+    public static void main(String[] args) {
+        String   input = &quot;false || true  &amp;&amp; (!false &amp;&amp; true)&quot;;
+        Tree.Node tree = Tree.parse(input);
+        boolean answer = eval(tree);
+
+        System.out.println(answer);
+    }
+    // eval...</code></pre>
+<p>Which prints what it should:</p>
+<pre><code>true</code></pre>
+<p>One more item is crossed off our list!</p>
+<pre><code>generate all truth tables given a formula
+├── make sense of the input text ✅
+│   ├── tokenizing ✅
+│   └── precedence rules ✅
+├── find every possible value for the variables 
+├── evaluate all possible expressions from the formula
+│   └── evaluate a single expression ✅
+└── print the results in the form a table</code></pre>
+<p>Next time we’ll begin work on producing values for our variables.</p>
