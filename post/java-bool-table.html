@@ -116,9 +116,8 @@ possible. For now, we allow it.)</p>
 <p>And we define a method to check if something is a member of our set
 of keywords:</p>
 <pre><code>private static boolean member(String s, String[] els) {
-    boolean found = false;
-    for (String e : els) { if (s.equals(e)) found = true; }
-    return found;
+    for (String e : els) { if (s.equals(e)) return true; }
+    return false;
 }</code></pre>
 <p>Our task now is to look at an array of our tokens, filtering out the
 tokens that are keywords and removing any duplicate variables. And it

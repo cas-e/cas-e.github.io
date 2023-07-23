@@ -101,9 +101,8 @@ And we  define a method to check if something is a member of our set of keywords
 
 ~~~
 private static boolean member(String s, String[] els) {
-	boolean found = false;
-	for (String e : els) { if (s.equals(e)) found = true; }
-	return found;
+	for (String e : els) { if (s.equals(e)) return true; }
+	return false;
 }
 ~~~
 
