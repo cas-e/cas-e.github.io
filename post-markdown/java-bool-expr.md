@@ -388,7 +388,7 @@ What we did
 After all that we finally have a working program that solves one small part of the problem! Our strategy was was to break down the problem into more manageable sub-problems which gave us a to-do list like this:
 
 ~~~
-generate all truth tables given a formula
+generate a truth table when given a formula
 ├── make sense of the input text
 │   ├── tokenizing ✅
 │   └── precedence rules

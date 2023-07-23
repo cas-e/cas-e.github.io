@@ -11,7 +11,7 @@ The plan
 We wrapped up last time with a working boolean expression evaluator and a to-do list for our problem that looked something like this:
 
 ~~~
-generate all truth tables given a formula
+generate a truth table when given a formula
 ├── make sense of the input text
 │   ├── tokenizing ✅
 │   └── precedence rules
@@ -343,7 +343,7 @@ true
 One more item is crossed off our list!
 
 ~~~
-generate all truth tables given a formula
+generate a truth table when given a formula
 ├── make sense of the input text ✅
 │   ├── tokenizing ✅
 │   └── precedence rules ✅

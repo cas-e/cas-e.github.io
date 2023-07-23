@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Generating Truth Tables in Java : Part 3 : Tables</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="./../style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>👾</text></svg>">
+</head>
+<body>
+<header>
+<p><a href="./../index.html">↩ main page</a></p>
+<hr>
+</header>
+<h1 id="generating-truth-tables-in-java-part-3-tables">Generating Truth
+Tables in Java : Part 3 : Tables</h1>
+<p>This the final part in a three-part series, the start of which is <a
+href="java-bool-expr.html">here</a>.</p>
+<p>The full code for this blog post can be found <a
+href="https://github.com/cas-e/blog-code/tree/main/JavaBoolTruthTable">here
+on github</a>.</p>
+<h2 id="so-far">So Far…</h2>
+<p>In the first post we figured out how to evaluate simple boolean
+expressions. Then, in the next post we finished up dealing with our
+input text. Our to-do list now looks like this:</p>
+<pre><code>generate a truth table when given a formula
+├── make sense of the input text ✅
+├── find every possible value for the variables 
+├── evaluate all possible expressions from the formula
+│   └── evaluate a single expression ✅
+└── print the results in the form a table</code></pre>
+<p>Let’s get started on finding every possible value for the
+variables.</p>
+<h2 id="finding-all-the-values">Finding All the Values</h2>
+<p>Here’s a demo class of how that will look under a file called
+Demo.java:</p>
+<pre><code>public class Demo {
+    public static void main(String args[]) {
+        generate(1);
+    }
+    public static void generate(int n) {
+        genVals(new boolean[n], 0);
+    }
+    public static void genVals(boolean[] bs, int n) {
+        if (n == bs.length) {
+            for (boolean b : bs) { System.out.print(b + &quot; &quot;);} // (1)
+            System.out.println();
+            return;
+        }
+        bs[n] = false;
+        genVals(bs, n+1);
+        bs[n] = true;
+        genVals(bs, n+1);
+    }
+}</code></pre>
+<p>Running this demo as it is, with a call to <code>generate(1)</code>,
+should produce every possible value for the boolean expression of just
+one variable <code>x</code>. And it does:</p>
+<pre><code>false 
+true</code></pre>
+<p>And if we had an expression with two variables like
+<code>x &amp;&amp; y</code>, we would need to consider all the inputs
+from <code>generate(2)</code>:</p>
+<pre><code>false false 
+false true 
+true false 
+true true </code></pre>
+<p>It’s a good time to note, if it’s not already obvious, that these are
+appearing in the order in which we count binary numbers <code>00</code>,
+<code>01</code>, <code>10</code>, <code>11</code>. This isn’t the only
+order we could traverse the space of possibilities (we could, for
+instance, use the <a href="https://en.wikipedia.org/wiki/Gray_code">Gray
+code order</a>). But “counting order” is the one commonly used for
+tables, and for, uh, counting. So it’s the one we use.</p>
+<p>By the way, when I was researching for this post, the above algorithm
+came up often under articles with titles like, “How to GIT GUD and CRUSH
+your FAANG interview with BINARY PERMUATIONS”. So, if the appeal of
+printing tables isn’t intrinsically satisfying for it’s own sake, maybe
+study that algorithm anyways for job interview reasons. (Just kidding,
+<strong>of course</strong> printing tables is intrinsically
+satisfying!)</p>
+<p>Anyways, let’s look at <code>(1)</code> in that code one more time.
+Right where we print out one line of boolean values from that array, is
+exactly the time we have all the information needed to make one call to
+our <code>evaluate</code> method and get the answers. For instance with
+<code>x &amp;&amp; y</code>, where we need <code>generate(2)</code>:</p>
+<pre><code>false false // evals to -&gt; false
+false true  // evals to -&gt; false
+true false  // evals to -&gt; false
+true true   // evals to -&gt; true</code></pre>
+<p>So we can use this algorithm to both: a) find the variable values,
+and b) invoke <code>eval</code> to find all the answers. We can then
+just pass all of that info along to some printing routine.</p>
+<p>But as of right now, our evaluator can’t handle any variables, so we
+will make some modifications there.</p>
+<h2 id="extracting-variables-from-expressions">Extracting Variables from
+Expressions</h2>
+<p>First, we need to determine how many variables we have in an
+expression and what their names are. An expression like
+<code>x &amp;&amp; x || x</code> may be a little long but it only has
+one variable: <code>x</code>, and will have a correspondingly small
+table: either <code>x</code> is true or <code>x</code> is false, so two
+options with two evaluations.</p>
+<p>So we need to extract the variables into a collection, and we also
+need to remove any duplicate variable names. Extracting variables will
+be a good job for the Tree class from last time, since determining
+variables is a syntax kind of thing.</p>
+<p>We will allow any name to be a variable as long as it is not one of
+our keywords like <code>&amp;&amp;</code> or <code>true</code>. (This
+has the terrible consequence that the tab character is a valid variable
+name– if the number of users of this program were to grow past 1, we
+would need to update <code>tokenize</code> to ensure this wasn’t
+possible. For now, we allow it.)</p>
+<p>So in Tree.java we define our keywords:</p>
+<pre><code>private static String[] keywords  = {&quot;true&quot;, &quot;false&quot;, &quot;&amp;&amp;&quot;, &quot;||&quot;, &quot;!&quot;, &quot;(&quot;, &quot;)&quot;};</code></pre>
+<p>And we define a method to check if something is a member of our set
+of keywords:</p>
+<pre><code>private static boolean member(String s, String[] els) {
+    boolean found = false;
+    for (String e : els) { if (s.equals(e)) found = true; }
+    return found;
+}</code></pre>
+<p>Our task now is to look at an array of our tokens, filtering out the
+tokens that are keywords and removing any duplicate variables. And it
+just so happens that Java’s streams provide exactly these methods as
+<code>filter()</code> and <code>distinct()</code>:</p>
+<pre><code>private static String[] getVars(String[] tokens, String[] keywords) {
+    return Arrays.stream(tokens).distinct()
+        .filter(x -&gt; !member(x, keywords)).toArray(String[]::new);
+}</code></pre>
+<p>Finally we wrap this <code>getVars</code> method up in another public
+method for use by our main TruthTable class:</p>
+<pre><code>public static String[] variables(String input) {
+    return getVars(tokenize(input), keywords);
+}</code></pre>
+<p>Which is called like:</p>
+<pre><code>String[] vars = Tree.variables(&quot;x &amp;&amp; y || x&quot;) 
+// vars is [&quot;x&quot;, &quot;y&quot;]</code></pre>
+<p>We now have one method for booleans all, one method for vars to find
+them. We will write one method to scan them all, and in a HashMap bind
+them.</p>
+<h2 id="binding-boolean-values-to-variables">Binding Boolean Values to
+Variables</h2>
+<p>Our evaluator for boolean expressions currently accepts a
+<code>Node</code> tree representing an expression. It now needs to
+additionally accept a mapping from variable names to boolean values.
+This kind of mapping is often referred to as an “environment”. We need
+it to have one method: <code>get(String s)</code> that returns the
+corresponding boolean. And a <code>java.util.HashMap</code> has this
+built in for us.</p>
+<p>First, working in our main TruthTable class, lets define a method to
+construct new environments…</p>
+<pre><code>public static HashMap&lt;String, Boolean&gt; makeEnv(String[] keys, boolean[] vals) {
+    HashMap&lt;String, Boolean&gt; env = new HashMap&lt;&gt;();
+    for (int i = 0; i &lt; keys.length; i++) {
+        env.put(keys[i], vals[i]);
+    }
+    return env;
+}</code></pre>
+<p>The evaluator has one extra line now, and one extra parameter, passed
+to all its recursive calls:</p>
+<pre><code>public static boolean eval(Tree.Node n, HashMap&lt;String, Boolean&gt; env) {
+    if (n.isVar)               return env.get(n.val);
+    if (n.val.equals(&quot;true&quot;))  return true;
+    if (n.val.equals(&quot;false&quot;)) return false;
+    if (n.val.equals(&quot;!&quot;))     return !eval(n.left, env);
+    if (n.val.equals(&quot;||&quot;))    return eval(n.left, env) || eval(n.right, env);
+    if (n.val.equals(&quot;&amp;&amp;&quot;))    return eval(n.left, env) &amp;&amp; eval(n.right, env);
+    System.out.println(&quot;unrecognized token in evaluator&quot;);
+    System.exit(1);
+    return false;
+}</code></pre>
+<p>That gives us everything we need to evaluate the expressions from the
+<code>generate</code> method. We get all the variable possibilities and
+all the evaluations from <code>generate</code>, and we just need to pick
+a data structure to store them so we can print it as a grid.</p>
+<h2 id="data-return-type-for-the-generate-method">Data Return Type for
+the Generate Method</h2>
+<p>The first choice that came to my mind was a nested array,
+<code>String[][]</code>. However, that ended up complicating the
+printing routine more than necessary. In my opinion, it turns out
+simpler for printing if we just keep all the data flat as a single array
+<code>String[]</code>. Of course, then we lose information about the
+grid structure. But, as long as we pass along a single <code>int</code>
+representing the row length (or equivalently, the number of columns),
+then we can recover the grid shape.</p>
+<p>We make another wrapper around a basic array with some added info and
+some helpers. Let’s call it <code>Seq</code> for sequence, much like in
+the other posts.</p>
+<pre><code>static class Seq {
+    int index = 0;
+    int rowLength;
+    String[] array;
+    public Seq(String[] ts)     { array = ts; }
+    public String next()        { return array[index++]; }
+    public void puts(String s)  { array[index++] = s; } // (1)
+    public boolean more()       { return (array.length - index) &gt; 0; }
+    public void resetIndex()    { index = 0;} // (2)
+    public boolean endOfVars()  { return (rowLength-1) == index%rowLength; } // (3)
+}</code></pre>
+<p>In <code>(1)</code>, we have a method <code>puts</code> that we can
+think of as “put string”, that just writes into the array. Once we
+<code>puts</code> all our strings representing booleans into the array,
+<code>resetIndex()</code> at <code>(2)</code> sets the index counter to
+it’s original state so that the printing routing gets a fresh
+<code>Seq</code> to iterate through. As for <code>(3)</code>, that is
+how we recover the grid structure through the saved
+<code>rowLength</code>. Note though, in the future printing routine,
+it’s more useful to know the <code>endOfVars()</code> which is one index
+before the actual end of the rows. To see why, let’s remember our table
+end goal:</p>
+<pre><code>x     y     | formula
+---------------------
+false false | false
+false true  | false
+true  false | false
+true  true  | true
+---------------------</code></pre>
+<p>We will use the <code>endOfVars()</code> method to determine where to
+put the vertical bars between the last variable value on a row and the
+formula value.</p>
+<p>And I do apologize for referring to future code we haven’t written
+yet, but I do hope everything becomes clear by the end of the post.</p>
+<p>On that note I think we are ready to <code>generate</code> all our
+values</p>
+<h2 id="generating-values">Generating Values</h2>
+<p>The <code>generate</code> method here is similar the one we defined
+in the beginning of this post, but now it stores its data instead of
+printing it, and additionally invokes the <code>eval</code> method on
+the data, passing along the results of that as well.</p>
+<p>First we define a wrapper method around <code>generate</code> that
+will set up the <code>Seq</code> to store the results. This wrapper gets
+all the data for a table, and I just googled “verb for make something
+into a table”. According to <a
+href="https://ell.stackexchange.com/questions/52156/whats-the-verb-version-of-table">Stack
+Overflow</a>, we should call our method <code>tabularize</code>:</p>
+<pre><code>public static int twoToThe(int x) { return 1 &lt;&lt; x ;}
+public static Seq evaluations(Tree.Node expr, String[] vars) {
+    int outputSize = (vars.length+1) * twoToThe(vars.length);
+    Seq output = new Seq(new String[outputSize]);
+    output.rowLength = vars.length + 1;
+    generate(expr, vars, new boolean[vars.length], output, 0);
+    output.resetIndex();
+    return output;
+}</code></pre>
+<p>Notice that since the default Java arrays are not resizable, we do
+some calculations to obtain the right size array before sending the
+whole Seq into <code>generate</code>. And we can see already from the
+call to <code>generate</code> at <code>(3)</code> that five parameters!
+That is towards the upper limit of how many params I would like to put
+in a method, but it is useful since <code>generate</code> is really
+driving the whole process:</p>
+<pre><code>public static void generate(Tree.Node expr, String[] vars, boolean[] bools, Seq s, int n) {
+    if (n == vars.length) {
+        for (boolean b : bools) { s.puts(&quot;&quot; + b); }
+        boolean evaluated = eval(expr, makeEnv(vars, bools));
+        s.puts(&quot;&quot; + evaluated);
+        return;
+    }
+    bools[n] = false;
+    generate(expr, vars, bools, s, n+1);
+    bools[n] = true;
+    generate(expr, vars, bools, s, n+1);
+}</code></pre>
+<p>This is just like the demo from before, but we <code>puts</code> all
+our booleans into the output <code>Seq</code> instead of printing them.
+At which point, we zip them up with the variables into a HashMap, and
+send that and the expression tree along to the evaluator. Then we can
+add the resulting boolean to the output sequence as well.</p>
+<p>And as it stands right now, we could run this…</p>
+<pre><code>public static void main(String[] args) {
+    String   input = &quot;x &amp;&amp; y&quot;;
+    Tree.Node expr = Tree.parse(input);
+    String[]  vars = Tree.variables(input);
+    Seq     values = evaluations(expr, vars);
+    for (String t : table.array) { System.out.print(t + &quot; &quot;);}
+}</code></pre>
+<p>Which results in:</p>
+<pre><code>false false false false true false true false false true true true</code></pre>
+<p>Which is correct! But hard to read. That’s a formatting issue for the
+next step in the project. For now we cross two more items off our
+list.</p>
+<pre><code>generate a truth table when given a formula
+├── make sense of the input text ✅
+├── find every possible value for the variables ✅
+├── evaluate all possible expressions from the formula ✅
+└── print the results in the form a table</code></pre>
+<h2 id="formatting">Formatting</h2>
+<p>Before we start writing the code, let’s take another look at the kind
+of formatting we are aiming for. For <code>x &amp;&amp; y</code> we
+want:</p>
+<pre><code>x     y     | formula
+---------------------
+false false | false
+false true  | false
+true  false | false
+true  true  | true
+---------------------</code></pre>
+<p>In the above, we add a padding space after <code>"true"</code> to
+make it line up nicely with <code>"false"</code> values. It all works
+nicely here with that small modification, but what if the variable names
+are much longer? For an expression like
+<code>myBoolean1 &amp;&amp; myBoolean2</code>:</p>
+<pre><code>myBoolean1 myBoolean2 | formula
+-------------------------------
+false      false      | false
+false      true       | false
+true       false      | false
+true       true       | true</code></pre>
+<p>Here, we have to add many padding spaces to both <code>"false"</code>
+and <code>"true"</code> in order to get things to line up nicely. The
+amount of padding depends on the length of the longest variable name, or
+<code>"false"</code>, whichever is greater. So we need some methods to
+determine what the longest name is, and some method that can add a
+variable amount of spaces:</p>
+<pre><code>public static int lengthiest(String[] vars) {
+    return java.util.Arrays.stream(vars).map(x -&gt; x.length())
+                 .reduce(&quot;false&quot;.length(), (x, y) -&gt; (x &gt; y) ? x : y);
+}
+public static StringBuilder pad(StringBuilder sb, String a, int l) {
+    return repeat(sb, &quot; &quot;, (l - a.length()) + 1);
+}
+public static StringBuilder repeat(StringBuilder sb, String s, int n) {
+    for (int i = 0; i &lt; n; i++) { sb.append(s); }
+    return sb;
+}</code></pre>
+<p>Okay, now we can get started on the routine that does the rest. The
+first thing we will do is cover the special case where someone just
+enters a boolean expression without any variables at all. All that can
+be done then is to evaluate the one expression and print either
+<code>"true"</code> or <code>"false"</code>. We also pass the evaluator
+an empty HashMap, since it needs all of it’s arguments.</p>
+<pre><code>public static String tabulate(Tree.Node expr, String[] vars, Seq grid) {
+    StringBuilder sb = new StringBuilder();
+    if (vars.length == 0) {
+        boolean single = eval(expr, new HashMap&lt;String, Boolean&gt;());
+        return sb.append(single).append(&quot;\n&quot;).toString();
+    }
+    // ...</code></pre>
+<p>Now the rest of the code beyond that point is dealing strictly with
+printing the tables. Here’s the full method:</p>
+<pre><code>public static String tabulate(Tree.Node expr, String[] vars, Seq grid) {
+    StringBuilder sb = new StringBuilder();
+    if (vars.length == 0) {
+        boolean single = eval(expr, new HashMap&lt;String, Boolean&gt;());
+        return sb.append(single).append(&quot;\n&quot;).toString();
+    }
+    String form = &quot;| formula&quot;;
+    int longest = lengthiest(vars);
+    int width = vars.length * (longest + 1) + form.length();
+    sb.append(&quot;\n&quot;);
+    for (String a : vars) { pad(sb.append(a), a, longest); }
+    sb.append(form).append(&quot;\n&quot;);
+    repeat(sb, &quot;-&quot;, width).append(&quot;\n&quot;);
+    while (grid.more()) {
+        String b = grid.next();
+        pad(sb.append(b), b, longest);
+        if (grid.endOfVars()) sb.append(&quot;| &quot; + grid.next() + &quot;\n&quot;);
+        
+    }
+    repeat(sb, &quot;-&quot;, width).append(&quot;\n&quot;);
+    return sb.toString(); 
+}</code></pre>
+<p>And there it is! In the first post in this series, we said the
+program should be able to handle longer cases like
+<code>p || q &amp;&amp; !r &amp;&amp; q</code>. And if we run the
+following:</p>
+<pre><code>public static void main(String[] args) {
+    String   input = &quot;p || q &amp;&amp; !r &amp;&amp; q&quot;;
+    Tree.Node expr = Tree.parse(input);
+    String[]  vars = Tree.variables(input);
+    Seq     values = evaluations(expr, vars); 
+    String   table = tabulate(expr, vars, values);
+
+    System.out.print(table);
+}</code></pre>
+<p>The output is:</p>
+<pre><code>p     q     r     | formula
+---------------------------
+false false false | false
+false false true  | false
+false true  false | true
+false true  true  | false
+true  false false | true
+true  false true  | true
+true  true  false | true
+true  true  true  | true
+---------------------------</code></pre>
+<p>It’s working! Well, it certainly seems to. Testing will have to be
+left as an exercise for the reader. (I have only tested many cases on my
+end, nothing exhaustive.) For now, we can update our list:</p>
+<pre><code>generate a truth table when given a formula
+├── make sense of the input text ✅
+├── find every possible value for the variables ✅
+├── evaluate all possible expressions from the formula ✅
+└── print the results in the form a table ✅</code></pre>
+<p>In fact, we can triumphantly collapse this whole list and consider
+this project finished. All that’s left is one last satisfying
+checkmark:</p>
+<pre><code>generate a truth table when given a formula ✅</code></pre>
