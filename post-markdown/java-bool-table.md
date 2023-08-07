@@ -212,7 +212,7 @@ Generating Values
 
 The `generate` method here is similar the one we defined in the beginning of this post, but now it stores its data instead of printing it, and additionally invokes the `eval` method on the data, passing along the results of that as well.
 
-First we define a wrapper method around `generate` that will set up the `Seq` to store the results. This wrapper gets all the data for a table, and I just googled "verb for make something into a table". According to [Stack Overflow](https://ell.stackexchange.com/questions/52156/whats-the-verb-version-of-table), we should call our method `tabularize`:
+First we define a wrapper method around `generate` that will set up the `Seq` to store the results.
 
 ~~~
 public static int twoToThe(int x) { return 1 << x ;}
@@ -220,13 +220,13 @@ public static Seq evaluations(Tree.Node expr, String[] vars) {
 	int outputSize = (vars.length+1) * twoToThe(vars.length);
 	Seq output = new Seq(new String[outputSize]);
 	output.rowLength = vars.length + 1;
-	generate(expr, vars, new boolean[vars.length], output, 0);
-	output.resetIndex();
+	generate(expr, vars, new boolean[vars.length], output, 0);  // (1)
+	output.resetIndex();                                        // (2)
 	return output;
 }
 ~~~
 
-Notice that since the default Java arrays are not resizable, we do some calculations to obtain the right size array before sending the whole Seq into `generate`. And we can see already from the call to `generate` at `(3)` that five parameters! That is towards the upper limit of how many params I would like to put in a method, but it is useful since `generate` is really driving the whole process:
+Notice that since the default Java arrays are not resizable, we do some calculations to obtain the right size array before sending the whole Seq into `generate`. At (1) we also call reset so that the next method in the pipeline can iterate over the results. And we can see already from the call to `generate` at `(1)` that five parameters! That is towards the upper limit of how many params I would like to put in a method, but it is useful since `generate` is really driving the whole process:
 
 ~~~
 public static void generate(Tree.Node expr, String[] vars, boolean[] bools, Seq s, int n) {
